@@ -9,23 +9,6 @@ const port = process.env.PORT || 5000;
 app.use(express.json());
 app.use(cors());
 
-const verifyJwt = (req, res, next) => {
-  const authorization = req.headers.authorization;
-  if (!authorization) {
-    return res
-      .status(401)
-      .send({ error: true, message: "unauthorized access" });
-  }
-  // bearer token
-  const token = authorization.split(" ")[1];
-  jwt.verify(token, process.env.SECRET_ACCESS_TOKEN, (err, decoded) => {
-    if (err) {
-      return res.status(401).send({ error: true, message: "forbidden access" });
-    }
-    req.decoded = decoded;
-    next();
-  });
-};
 app.get("/", (req, res) => {
   res.send("restaurant data are coming");
 });
@@ -47,6 +30,40 @@ async function run() {
   const reviewCollection = client.db("bistro-restaurant").collection("reviews");
   const cartCollection = client.db("bistro-restaurant").collection("carts");
   const usersCollection = client.db("bistro-restaurant").collection("users");
+
+  // using middleware
+  const verifyToken = (req, res, next) => {
+    const authorization = req.headers.authorization;
+    if (!authorization) {
+      return res
+        .status(401)
+        .send({ error: true, message: "unauthorized access" });
+    }
+    // bearer token
+    const token = authorization.split(" ")[1];
+    jwt.verify(token, process.env.SECRET_ACCESS_TOKEN, (err, decoded) => {
+      if (err) {
+        return res
+          .status(401)
+          .send({ error: true, message: "forbidden access" });
+      }
+      req.decoded = decoded;
+      next();
+    });
+  };
+
+  // use verifyAdmin after verifyToken
+  const verifyAdmin = async (req, res, next) => {
+    const email = req.decoded.email;
+    const query = { email: email };
+    const user = await usersCollection.findOne(query);
+    const isAdmin = user?.role === "admin";
+    if (!isAdmin) {
+      res.status(403).send({ message: "forvidden access" });
+    }
+    next();
+  };
+
   try {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
@@ -61,7 +78,7 @@ async function run() {
       res.send({ token });
     });
 
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
     });
@@ -77,7 +94,7 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/users/:id", async (req, res) => {
+    app.delete("/users/:id", verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await usersCollection.deleteOne(query);
@@ -86,23 +103,28 @@ async function run() {
 
     // admin api
 
-    app.patch("/users/admin/:id", async (req, res) => {
-      const id = req.params.id;
-      const filter = { _id: new ObjectId(id) };
-      const updateDoc = {
-        $set: {
-          role: "admin",
-        },
-      };
-      const result = await usersCollection.updateOne(filter, updateDoc);
-      res.send(result);
-    });
+    app.patch(
+      "/users/admin/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            role: "admin",
+          },
+        };
+        const result = await usersCollection.updateOne(filter, updateDoc);
+        res.send(result);
+      }
+    );
 
-    // security layer : verifyJWT
+    // security layer : verifyToken
     // email same
     // check admin
 
-    app.get("/users/admin/:email", verifyJwt, async (req, res) => {
+    app.get("/users/admin/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
       if (req.decoded.email !== email) {
         res.send({ admin: false });
@@ -110,6 +132,7 @@ async function run() {
       const query = { email: email };
       const user = await usersCollection.findOne(query);
       const result = { admin: user?.role === "admin" };
+
       res.send(result);
     });
 
@@ -135,7 +158,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/carts", verifyJwt, async (req, res) => {
+    app.get("/carts", verifyToken, async (req, res) => {
       const email = req.query.email;
       // console.log(email);
       // console.log(email);
@@ -168,3 +191,16 @@ run().catch(console.dir);
 app.listen(port, () => {
   console.log("listening port is ", port);
 });
+
+/**
+ * --------------------------------
+ *      NAMING CONVENTION
+ * --------------------------------
+ * app.get('/users')
+ * app.get('/users/:id')
+ * app.post('/users')
+ * app.put('/users/:id')
+ * app.patch('/users/:id')
+ * app.delete('/users/:id')
+ *
+ */
