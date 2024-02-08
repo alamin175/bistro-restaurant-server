@@ -151,6 +151,47 @@ async function run() {
       res.send(result);
     });
 
+    app.delete("/menu/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await menuCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    // only for check, it can delete.
+    app.delete("/menu", async (req, res) => {
+      // const id = req.params.id;
+      // const query = { _id: new ObjectId(id) };
+      const query = {};
+      const result = await menuCollection.deleteMany(query);
+      res.send(result);
+    });
+
+    app.get("/dashboard/manageItems/updateMenu/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: id };
+      const result = await menuCollection.findOne(query);
+      res.send(result);
+    });
+
+    app.patch("/updateMenu/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const item = req.body;
+      const id = req.params.id;
+      const filter = { _id: id };
+      const options = { upsert: true };
+      const updateDoc = {
+        $set: {
+          name: item.name,
+          category: item.category,
+          price: item.price,
+          recipe: item.recipe,
+          image: item.image,
+        },
+      };
+      const result = await menuCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
     // reviews api
     app.get("/reviews", async (req, res) => {
       const result = await reviewCollection.find().toArray();
