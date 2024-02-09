@@ -31,6 +31,9 @@ async function run() {
   const reviewCollection = client.db("bistro-restaurant").collection("reviews");
   const cartCollection = client.db("bistro-restaurant").collection("carts");
   const usersCollection = client.db("bistro-restaurant").collection("users");
+  const paymentCollection = client
+    .db("bistro-restaurant")
+    .collection("payments");
 
   // using middleware
   const verifyToken = (req, res, next) => {
@@ -102,18 +105,41 @@ async function run() {
       res.send(result);
     });
 
-    // payment api
+    // payment  related api
 
     app.post("/create-payment-intent", async (req, res) => {
       const { price } = req.body;
       const amount = parseInt(price * 100);
-      console.log(amount);
+      // console.log(amount)
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amount,
         currency: "usd",
         payment_method_types: ["card"],
       });
       res.send({ clientSecret: paymentIntent.client_secret });
+    });
+
+    app.post("/payments", async (req, res) => {
+      const payment = req.body;
+      // console.log(payment);
+      const paymentResult = await paymentCollection.insertOne(payment);
+      const query = {
+        _id: {
+          $in: payment.cartIds.map((id) => new ObjectId(id)),
+        },
+      };
+      const deleteResult = await cartCollection.deleteMany(query);
+      res.send({ paymentResult, deleteResult });
+    });
+
+    app.get("/payments/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const query = { email: email };
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      const result = await paymentCollection.find(query).toArray();
+      res.send(result);
     });
 
     // admin api
